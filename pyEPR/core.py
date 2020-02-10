@@ -673,7 +673,7 @@ class pyEPR_HFSSAnalysis(object):
         uj = ConstantVecCalcObject(uj, self.setup)
         calc = CalcObject([], self.setup)
         #calc = calc.getQty("Jsurf").mag().integrate_surf(name = junc_rect)
-        calc = (((calc.getQty("Jsurf")).dot(uj)).imag()
+        calc = (((calc.getQty("Jsurf")).dot(uj)).complexmag()
                 ).integrate_surf(name=junc_rect)
         I = calc.evaluate(lv=lv) / jl  # phase = 90
         #self.design.Clear_Field_Clac_Stack()
