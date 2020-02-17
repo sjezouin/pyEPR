@@ -221,9 +221,13 @@ class Project_Info(object):
                 elif self.design.solution_type == 'DrivenModal':
                     setup = self.design.create_dm_setup() # adding a driven modal design
                     self.setup_name = setup.name
-            else:
+            elif self.setup_name == None:
                 self.setup_name = setup_names[0]
-
+            elif self.setup_name not in setup_names:
+                logger.error(f"\tSetup does not exist.")
+                raise(Exception(' Did you provide the correct setup name?\
+                    Failed to pull up setup. \N{loudly crying face}'))
+                
             self.get_setup(self.setup_name) # get the actual setup if there is one
 
         except Exception as e:
@@ -1014,7 +1018,6 @@ class pyEPR_HFSSAnalysis(object):
                 _Om['freq_GHz'] = temp_freq  # freq
                 Om[mode] = _Om
                 print(f'  Mode {mode} at {"%.2f" % temp_freq} GHz   [{mode+1}/{self.nmodes}]')
-
 
                 ### EPR Hamiltonian calculations
                 # Calculation global energies and report
