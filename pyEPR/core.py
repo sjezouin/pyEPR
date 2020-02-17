@@ -1492,9 +1492,9 @@ class Results_Hamiltonian(OrderedDict):
             data_dir = Path(config.root_dir) / 'temp' / \
                        time.strftime('%Y-%m-%d %H-%M-%S', time.localtime())
 
-        data_dir = Path(data_dir).resolve()
-        file_name = data_dir.stem
-        directory = data_dir.parents[0]
+        data_path = Path(data_dir).resolve()
+        file_name = data_path.stem
+        directory = data_path.parents[0]
         if not directory.is_dir():
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -1504,7 +1504,7 @@ class Results_Hamiltonian(OrderedDict):
 
         elif isinstance(dict_file, str):
             try:
-                self.file_name = str(data_dir)+'\\' + dict_file
+                self.file_name = str(directory/dict_file)
                 self.load_from_npz()
             except:
                 self.file_name = dict_file
