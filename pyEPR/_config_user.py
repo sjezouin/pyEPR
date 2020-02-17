@@ -73,6 +73,8 @@ config = Dict( # pylint: disable=invalid-name
         # 					Will calculate the Pj matrix for the selected modes for the given junctions
         # 					junc_rect array & length of junctions
         method_calc_P_mj='line_voltage',
+        
+        method_calc_Q = 'Jsurf',
 
     ),
 

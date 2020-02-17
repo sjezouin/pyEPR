@@ -713,6 +713,17 @@ class pyEPR_HFSSAnalysis(object):
             name=junc_line_name)
         #self.design.Clear_Field_Clac_Stack()
         return calc.evaluate(lv=lv)
+    
+    def calc_surf_loss_density(self, variation, junc_rect):
+        ''' Peak current I_max for mdoe J in junction J
+            The avg. is over the surface of the junction. I.e., spatial. '''
+        lv = self.get_lv(variation)
+
+        calc = CalcObject([], self.setup)
+        calc = (calc.getQty("SurfaceLossDensity")).integrate_surf(name=junc_rect)
+        P = calc.evaluate(lv=lv)
+        
+        return P
 
     def get_junc_len_dir(self, variation, junc_line):
         '''
@@ -852,9 +863,18 @@ class pyEPR_HFSSAnalysis(object):
 
         freq = freq_GHz * 1e9  # freq in Hz
         for port_nm, port in self.pinfo.ports.items():
-            I_peak = self.calc_avg_current_J_surf_mag(variation, port['rect'],
-                                                      port['line'])
-            U_dissip = 0.5 * port['R'] * I_peak**2 * 1 / freq
+            if self.pinfo.options.method_calc_Q is 'Jsurf':
+                I_peak = self.calc_avg_current_J_surf_mag(variation, 
+                                                          port['rect'],
+                                                          port['line'])
+                P = 0.5 * port['R'] * I_peak**2
+            elif self.pinfo.options.method_calc_Q is 'SurfaceLossDensity':
+                P = self.calc_surf_loss_density(variation, port['rect'])
+            else:
+                raise NotImplementedError('Other calculation methods\
+(self.pinfo.options.method_calc_Q) are possible but not implemented here. ')
+                
+            U_dissip = P / freq
             p = U_dissip / (U_E/2)  # U_E is 2x the peak electrical energy
             kappa = p * freq
             Q = 2 * np.pi * freq / kappa
