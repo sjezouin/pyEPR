@@ -682,6 +682,24 @@ class pyEPR_HFSSAnalysis(object):
         I = calc.evaluate(lv=lv) / jl  # phase = 90
         #self.design.Clear_Field_Clac_Stack()
         return I
+    
+    def calc_avg_current_J_surf_phase(self, variation, junc_rect, junc_line):
+        ''' Complex phase of the mode current in junction J
+            The avg. is over the surface of the junction. I.e., spatial. '''
+        lv = self.get_lv(variation)
+
+        jl, uj = self.get_junc_len_dir(variation, junc_line)
+
+        uj = ConstantVecCalcObject(uj, self.setup)
+        calc_re = CalcObject([], self.setup)
+        calc_re = (((calc_re.getQty("Jsurf")).dot(uj)).real()
+                    ).integrate_surf(name=junc_rect)
+        calc_im = CalcObject([], self.setup)
+        calc_im = (((calc_im.getQty("Jsurf")).dot(uj)).imag()
+                    ).integrate_surf(name=junc_rect)
+        I = (calc_re.evaluate(lv=lv) + 1j * calc_im.evaluate(lv=lv)) / jl
+        
+        return np.angle(I)
 
     def calc_current_line_voltage(self, variation, junc_line_name, junc_L_Henries):
         '''
@@ -881,6 +899,22 @@ class pyEPR_HFSSAnalysis(object):
             Qp['Q_' + port_nm] = Q
 
         return Qp
+    
+    def calc_drive_phase(self, variation):
+        '''
+        Calculate the phase along which mode m is driven by each port p.
+        The port should be at a distance much smaller than the wavelength
+        to the capacitance, inductance, whatsoever is coupled to the resonator.
+        '''
+        
+        drive_phase = pd.Series({})
+        
+        for port_nm, port in self.pinfo.ports.items():
+            phi = self.calc_avg_current_J_surf_phase(variation, port['rect'],
+                                                     port['line'])
+            drive_phase['Phi_' + port_nm] = phi
+            
+        return drive_phase
 
     def calc_p_junction(self, variation, U_H, U_E, Ljs):
         '''
@@ -1024,8 +1058,9 @@ class pyEPR_HFSSAnalysis(object):
             Om = OrderedDict()  # Matrix of angular frequency (of analyzed modes)
             Pm = OrderedDict()  # Participation P matrix
             Sm = OrderedDict()  # Sign          S matrix
-            Qm_coupling = OrderedDict()  # Quality factor matrix
-            SOL = OrderedDict()          # Other results
+            Qm_coupling = OrderedDict() # Quality factor matrix
+            Phi_d       = OrderedDict() # Phase along which a port drives a mode
+            SOL = OrderedDict()         # Other results
 
             for mode in modes:  # integer of mode number [0,1,2,3,..]
 
@@ -1080,7 +1115,9 @@ class pyEPR_HFSSAnalysis(object):
                 Qm_coupling[mode] = self.calc_Q_external(variation,
                                                          freqs_bare_GHz[mode],
                                                          self.U_E)
-
+                
+                Phi_d[mode] = self.calc_drive_phase(variation)
+                
                 # get seam Q
                 if self.pinfo.dissipative.seams:
                     for seam in self.pinfo.dissipative.seams:
@@ -1108,8 +1145,8 @@ class pyEPR_HFSSAnalysis(object):
                 SOL[mode] = sol
 
             # Save
-            self._update_results(variation, Om, Pm, Sm, Qm_coupling, SOL,
-                                 freqs_bare_GHz, Qs_bare, Ljs,
+            self._update_results(variation, Om, Pm, Sm, Qm_coupling, Phi_d, 
+                                 SOL, freqs_bare_GHz, Qs_bare, Ljs,
                                  self.hfss_variables[variation])
             self.save()
 
@@ -1117,8 +1154,8 @@ class pyEPR_HFSSAnalysis(object):
 
         return self.data_filename, variations
 
-    def _update_results(self, variation:str, Om, Pm, Sm, Qm_coupling, sols,
-                        freqs_bare_GHz, Qs_bare, Ljs, hfss_variables):
+    def _update_results(self, variation:str, Om, Pm, Sm, Qm_coupling, Phi_d, 
+                        sols, freqs_bare_GHz, Qs_bare, Ljs, hfss_variables):
         '''
         Save variation
         '''
@@ -1127,6 +1164,7 @@ class pyEPR_HFSSAnalysis(object):
         self.results[variation]['Sm'] = pd.DataFrame(Sm).transpose()
         self.results[variation]['sols'] = pd.DataFrame(sols).transpose()
         self.results[variation]['Qm_coupling'] = pd.DataFrame(Qm_coupling).transpose()
+        self.results[variation]['Drive_phase'] = pd.DataFrame(Phi_d).transpose()
 
         self.results[variation]['Ljs'] = Ljs
         self.results[variation]['Qs'] = Qs_bare
@@ -1477,9 +1515,9 @@ class Results_Hamiltonian(OrderedDict):
             data_dir = Path(config.root_dir) / 'temp' / \
                        time.strftime('%Y-%m-%d %H-%M-%S', time.localtime())
 
-        data_dir = Path(data_dir).resolve()
-        file_name = data_dir.stem
-        directory = data_dir.parents[0]
+        data_path = Path(data_dir).resolve()
+        file_name = data_path.stem
+        directory = data_path.parents[0]
         if not directory.is_dir():
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -1489,7 +1527,7 @@ class Results_Hamiltonian(OrderedDict):
 
         elif isinstance(dict_file, str):
             try:
-                self.file_name = str(data_dir)+'\\' + dict_file
+                self.file_name = str(directory/dict_file)
                 self.load_from_npz()
             except:
                 self.file_name = dict_file
@@ -1634,6 +1672,7 @@ class pyEPR_Analysis(object):
         self.freqs_hfss     = results['freqs_hfss_GHz']
         self.Qs             = results['Qs']
         self.Qm_coupling    = results['Qm_coupling']
+        self.Phi_d          = results['Drive_phase']
         self.Ljs            = results['Ljs'] # DataFrame
         self.OM             = results['Om']  # dict of dataframes
         self.PM             = results['Pm'] # participation matrices
@@ -1966,6 +2005,7 @@ class pyEPR_Analysis(object):
         result['hfss_variables'] = self.hfss_variables[variation] # just propagate
         result['Ljs']            = self.Ljs[variation]
         result['Q_coupling']     = self.Qm_coupling[variation]
+        result['Drive_phase']    = self.Phi_d[variation]
         result['Qs']             = self.Qs[variation]
         result['fock_trunc']     = fock_trunc
         result['cos_trunc']      = cos_trunc
@@ -2011,6 +2051,9 @@ class pyEPR_Analysis(object):
 
         print('\n*** Q_coupling')
         print(result['Q_coupling'])
+        
+        print('\n*** Drive phase (deg)')
+        print(result['Drive_phase'] * 180.0 / np.pi)
 
     def plotting_dic_x(self, Var_dic, var_name):
         dic = {}
