@@ -668,7 +668,7 @@ class pyEPR_HFSSAnalysis(object):
         return I
 
     def calc_avg_current_J_surf_mag(self, variation, junc_rect, junc_line):
-        ''' Peak current I_max for mdoe J in junction J
+        ''' Peak value I_max of the projected mode current in junction J
             The avg. is over the surface of the junction. I.e., spatial. '''
         lv = self.get_lv(variation)
 
@@ -683,8 +683,8 @@ class pyEPR_HFSSAnalysis(object):
         #self.design.Clear_Field_Clac_Stack()
         return I
     
-    def calc_avg_current_J_surf_phase(self, variation, junc_rect, junc_line):
-        ''' Complex phase of the mode current in junction J
+    def calc_avg_current_J_surf_complex(self, variation, junc_rect, junc_line):
+        ''' Complex average value of the projected mode current in junction J
             The avg. is over the surface of the junction. I.e., spatial. '''
         lv = self.get_lv(variation)
 
@@ -699,7 +699,7 @@ class pyEPR_HFSSAnalysis(object):
                     ).integrate_surf(name=junc_rect)
         I = (calc_re.evaluate(lv=lv) + 1j * calc_im.evaluate(lv=lv)) / jl
         
-        return np.angle(I)
+        return I
 
     def calc_current_line_voltage(self, variation, junc_line_name, junc_L_Henries):
         '''
@@ -732,13 +732,16 @@ class pyEPR_HFSSAnalysis(object):
         #self.design.Clear_Field_Clac_Stack()
         return calc.evaluate(lv=lv)
     
-    def calc_surf_loss_density(self, variation, junc_rect):
-        ''' Peak current I_max for mdoe J in junction J
-            The avg. is over the surface of the junction. I.e., spatial. '''
+    def calc_surf_impedance_losses(self, variation, surf):
+        ''' Calculate the total losses of mode m in the surface impedance 
+            boundary surf, using HFSS quantity SurfaceLossDensity. 
+            It basically integrates the real part of the Poynting vector over 
+            the surface. Therefore any simulated loss will be captured.
+        '''
         lv = self.get_lv(variation)
-
+        
         calc = CalcObject([], self.setup)
-        calc = (calc.getQty("SurfaceLossDensity")).integrate_surf(name=junc_rect)
+        calc = calc.getQty("SurfaceLossDensity").integrate_surf(name=surf)
         P = calc.evaluate(lv=lv)
         
         return P
@@ -876,21 +879,29 @@ class pyEPR_HFSSAnalysis(object):
         Calculate the coupling Q of mode m with each port p
         Expected that you have specified the mode before calling this
         '''
-
         Qp = pd.Series({})
 
         freq = freq_GHz * 1e9  # freq in Hz
         for port_nm, port in self.pinfo.ports.items():
-            if self.pinfo.options.method_calc_Q is 'Jsurf':
-                I_peak = self.calc_avg_current_J_surf_mag(variation, 
-                                                          port['rect'],
-                                                          port['line'])
-                P = 0.5 * port['R'] * I_peak**2
-            elif self.pinfo.options.method_calc_Q is 'SurfaceLossDensity':
-                P = self.calc_surf_loss_density(variation, port['rect'])
-            else:
-                raise NotImplementedError('Other calculation methods\
-(self.pinfo.options.method_calc_Q) are possible but not implemented here. ')
+            
+            rects = port['rect'] if type(port['rect']) is list else [port['rect']]
+            lines = port['line'] if type(port['line']) is list else [port['line']]
+            Rs    = port['R']    if type(port['R'])    is list else [port['R']]
+            if len(rects) != len(lines) or len(rects) != len(Rs):
+                raise ValueError(f'Number of rect, lines and R are different in \
+                                 port {port_nm}.')
+            
+            P = 0
+            for rect, line, R in zip(rects, lines, Rs):
+                if self.pinfo.options.method_calc_Q == 'Jsurf':
+                    I_peak = self.calc_avg_current_J_surf_mag(variation, 
+                                                              rect, line)
+                    P += 0.5 * R * I_peak**2
+                elif self.pinfo.options.method_calc_Q == 'SurfaceLossDensity':
+                    P += self.calc_surf_impedance_losses(variation, rect)
+                else:
+                    raise NotImplementedError('Other calculation methods\
+    (self.pinfo.options.method_calc_Q) are possible but not implemented here. ')
                 
             U_dissip = P / freq
             p = U_dissip / (U_E/2)  # U_E is 2x the peak electrical energy
@@ -906,13 +917,22 @@ class pyEPR_HFSSAnalysis(object):
         The port should be at a distance much smaller than the wavelength
         to the capacitance, inductance, whatsoever is coupled to the resonator.
         '''
-        
         drive_phase = pd.Series({})
         
         for port_nm, port in self.pinfo.ports.items():
-            phi = self.calc_avg_current_J_surf_phase(variation, port['rect'],
-                                                     port['line'])
-            drive_phase['Phi_' + port_nm] = phi
+            
+            rects = port['rect'] if type(port['rect']) is list else [port['rect']]
+            lines = port['line'] if type(port['line']) is list else [port['line']]
+            if len(rects) != len(lines):
+                raise ValueError(f'Number of rect and lines are different in \
+                                 port {port_nm}.')
+                
+            I = 0
+            for rect, line in zip(rects, lines):
+                I += self.calc_avg_current_J_surf_complex(variation, rect, line)
+            I /= len(rects)  
+            
+            drive_phase['Phi_' + port_nm] = np.angle(I)
             
         return drive_phase
 
