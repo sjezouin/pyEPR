@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "3cb1183c_11883f21",
+        "filename": "test_file",
+        "patchSetId": 1
+      },
+      "lineNbr": 1,
+      "author": {
+        "id": 1018630
+      },
+      "writtenOn": "2020-11-12T15:46:51Z",
+      "side": 1,
+      "message": "Pas ouf ton truc",
+      "revId": "14e95ac48bc8a3132028113191c8066403959e96",
+      "serverId": "d5d70762-12d0-45a1-890d-524b12d3f735",
+      "unresolved": true
+    }
+  ]
+}
